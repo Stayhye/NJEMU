@@ -674,86 +674,102 @@ int parse_cheat_option_line(char *line, gamecheat_t* cheat ){
 void cheats_load_file(char *fn);
 
 void cheats_load(void){
-		
+
     char fn[512];
     char buff[ MAX_BUFF];
-		FILE *fp;
+		int fd;
 		char include_fn[50];
 		int i = 0;
 		char* buff_ptr = NULL;
-    
+
     //Si ya hay elementos, no agregar mas a la funcion
-		if( cheat_num > 0) return; 
-		
+		if( cheat_num > 0) return;
+
 		sprintf(fn, "%scheats/%s.ini", launchDir, game_name);
-		
-    fp = fopen(fn, "r");
-    if( fp == NULL)
+
+    fd = open(fn, O_RDONLY);
+    if( fd < 0)
 	{
 		ui_popup(TEXT(CHEAT_FOR_THIS_GAME_NOT_FOUND));
 		return;
 	}
-    	
+
     //se revisa si la primera linea es un include
-    if(  fgets(buff, MAX_BUFF, fp)	){
+    {
+    	ssize_t n = 0;
+    	char c;
+    	while (n < MAX_BUFF - 1) {
+    		if (read(fd, &c, 1) <= 0) break;
+    		buff[n++] = c;
+    		if (c == '\n') break;
+    	}
+    	buff[n] = '\0';
+    	if (n > 0) {
     	if( strncmp(buff, "include",7) == 0){
-    		
+
     			buff_ptr = buff;
-    			//se eliminan todos los caracteres hasta la primer comilla doble	
+    			//se eliminan todos los caracteres hasta la primer comilla doble
     			while(1){
     					if( *buff_ptr == '\0' || *buff_ptr == '\r' || *buff_ptr == '\n') break;
     					if( *buff_ptr == '"'){ buff_ptr++; break;} //Se encontro la primera comilla doble, se consume el caracter y  termina el ciclo
-    					buff_ptr++;	
+    					buff_ptr++;
     			}
     			//Se revisa el ultimo caracter
     			if( *buff_ptr == '\0' || *buff_ptr == '\r' || *buff_ptr == '\n') {
-    				fclose(fp);
+    				close(fd);
     				return; //mal cadena de include, no se encontro la primera comilla doble
     			}
     			//Se copian el resto de los caracteres
     			i = 0;
     			while(1){
     				if( *buff_ptr == '\0' || *buff_ptr == '\r' || *buff_ptr == '\n') {
-    					fclose(fp);
+    					close(fd);
     					return; //mal cadena de include, no se encontro la ultima comilla doble
     				}
     				if( *buff_ptr == '"'){
     					include_fn[i] = '\0'; //ultima comilla doble, se termina la cadena y el ciclo
     					break;
     				}
-    				
+
     				include_fn[i++] = *(buff_ptr++);
     			}
-    			
+
     			sprintf(fn, "%scheats/%s.ini", launchDir, include_fn);
     	}
+    	}
     }
-    fclose(fp);
-    
+    close(fd);
+
     //ahora si, se abre el archivo correcto
     cheats_load_file(fn);
-    
+
 }
 
 void cheats_load_file(char *fn){
-	  
+
     int cheat_detected = 0;
     char buff[ MAX_BUFF];
     gamecheat_t* new_cheat = NULL;
-		FILE *fp;
+		int fd;
 		char * ptr_tmp = NULL;
     char clean_label[50];
     int i;
-    
-    //Si ya hay elementos, no agregar mas a la funcion
-		if( cheat_num > 0) return; 
-		
-		
-    fp = fopen(fn, "r");
-    if( fp == NULL) return;
 
-    
-    while ( fgets(buff, MAX_BUFF, fp) ){
+    //Si ya hay elementos, no agregar mas a la funcion
+		if( cheat_num > 0) return;
+
+    fd = open(fn, O_RDONLY);
+    if( fd < 0) return;
+
+    while (1) {
+    	ssize_t n = 0;
+    	char c;
+    	while (n < MAX_BUFF - 1) {
+    		if (read(fd, &c, 1) <= 0) goto done;
+    		buff[n++] = c;
+    		if (c == '\n') break;
+    	}
+    	buff[n] = '\0';
 
         if( buff[0] == '\r' || buff[0] == '\n' ){
             cheat_detected = 0;
@@ -766,7 +782,7 @@ void cheats_load_file(char *fn){
             //Se limpia el nombre del cheat
             //a)quitar la palabra cheat
             //b)remover " comilla doble
-            
+
             ptr_tmp = &(buff[5]);
             i = 0;
             while(1){
@@ -784,10 +800,11 @@ void cheats_load_file(char *fn){
 
         }else if( cheat_detected == 1){ //linea de cheat option
             parse_cheat_option_line( buff, new_cheat);
-        }        
+        }
     }
-    fclose(fp);
-	
+done:
+    close(fd);
+
 }
 
 

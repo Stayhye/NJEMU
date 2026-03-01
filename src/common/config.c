@@ -7,10 +7,37 @@
 ******************************************************************************/
 
 #include <limits.h>
+#include <stdarg.h>
 #include "emumain.h"
 #include "common/config.h"
 
 #define LINEBUF_SIZE	256
+
+/* Write formatted string to a file descriptor */
+static void fd_printf(int fd, const char *fmt, ...)
+{
+	char buf[512];
+	va_list args;
+	int n;
+	va_start(args, fmt);
+	n = vsnprintf(buf, sizeof(buf), fmt, args);
+	va_end(args);
+	if (n > 0) write(fd, buf, n);
+}
+
+/* Read one line from fd into buf (up to size-1 chars); returns bytes read or 0 on EOF */
+static ssize_t fd_readline(int fd, char *buf, size_t size)
+{
+	size_t i = 0;
+	char c;
+	while (i < size - 1) {
+		if (read(fd, &c, 1) <= 0) break;
+		buf[i++] = c;
+		if (c == '\n') break;
+	}
+	buf[i] = '\0';
+	return (ssize_t)i;
+}
 
 
 enum
@@ -243,9 +270,10 @@ static const char *set_config_pad(int value)
 
 static int load_inifile(const char *path, cfg_type *cfg, cfg2_type *cfg2)
 {
-	FILE *fp;
+	int fd;
 
-	if ((fp = fopen(path, "r")) != NULL)
+	fd = open(path, O_RDONLY);
+	if (fd >= 0)
 	{
 		int i;
 		char linebuf[LINEBUF_SIZE];
@@ -255,7 +283,7 @@ static int load_inifile(const char *path, cfg_type *cfg, cfg2_type *cfg2)
 			char *name, *value;
 
 			memset(linebuf, 0, LINEBUF_SIZE);
-			if (fgets(linebuf, LINEBUF_SIZE - 1, fp) == NULL)
+			if (fd_readline(fd, linebuf, LINEBUF_SIZE) == 0)
 				break;
 
 			if (linebuf[0] == ';' || linebuf[0] == '[')
@@ -286,15 +314,15 @@ static int load_inifile(const char *path, cfg_type *cfg, cfg2_type *cfg2)
 
 		if (cfg2)
 		{
-			fseek(fp, 0, SEEK_SET);
+			lseek(fd, 0, SEEK_SET);
 
 			while (1)
 			{
 				char *name, *value;
 				char *p1, *p2, temp[LINEBUF_SIZE];
 
-			memset(linebuf, 0, LINEBUF_SIZE);
-				if (fgets(linebuf, LINEBUF_SIZE - 1, fp) == NULL)
+				memset(linebuf, 0, LINEBUF_SIZE);
+				if (fd_readline(fd, linebuf, LINEBUF_SIZE) == 0)
 					break;
 
 				strcpy(temp, linebuf);
@@ -336,7 +364,7 @@ static int load_inifile(const char *path, cfg_type *cfg, cfg2_type *cfg2)
 			}
 		}
 
-		fclose(fp);
+		close(fd);
 
 		return 1;
 	}
@@ -351,24 +379,25 @@ static int load_inifile(const char *path, cfg_type *cfg, cfg2_type *cfg2)
 
 static int save_inifile(const char *path, cfg_type *cfg, cfg2_type *cfg2)
 {
-	FILE *fp;
+	int fd;
 
-	if ((fp = fopen(path, "w")) != NULL)
+	fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+	if (fd >= 0)
 	{
 		int i;
 
-		fprintf(fp, ";-------------------------------------------\r\n");
-		fprintf(fp, "; " APPNAME_STR " " VERSION_STR "\r\n");
-		fprintf(fp, ";-------------------------------------------\r\n");
+		fd_printf(fd, ";-------------------------------------------\r\n");
+		fd_printf(fd, "; " APPNAME_STR " " VERSION_STR "\r\n");
+		fd_printf(fd, ";-------------------------------------------\r\n");
 
 		for (i = 0; cfg[i].name; i++)
 		{
 			switch (cfg[i].type)
 			{
-			case CFG_NONE: if (cfg[i].name) fprintf(fp, "\r\n%s\r\n", cfg[i].name); break;
-			case CFG_INT:  fprintf(fp, "%s = %s\r\n", cfg[i].name, set_config_int(*cfg[i].value, cfg[i].max)); break;
-			case CFG_BOOL: fprintf(fp, "%s = %s\r\n", cfg[i].name, set_config_bool(*cfg[i].value)); break;
-			case CFG_PAD:  fprintf(fp, "%s = %s\r\n", cfg[i].name, set_config_pad(*cfg[i].value)); break;
+			case CFG_NONE: if (cfg[i].name) fd_printf(fd, "\r\n%s\r\n", cfg[i].name); break;
+			case CFG_INT:  fd_printf(fd, "%s = %s\r\n", cfg[i].name, set_config_int(*cfg[i].value, cfg[i].max)); break;
+			case CFG_BOOL: fd_printf(fd, "%s = %s\r\n", cfg[i].name, set_config_bool(*cfg[i].value)); break;
+			case CFG_PAD:  fd_printf(fd, "%s = %s\r\n", cfg[i].name, set_config_pad(*cfg[i].value)); break;
 			}
 		}
 
@@ -378,13 +407,13 @@ static int save_inifile(const char *path, cfg_type *cfg, cfg2_type *cfg2)
 			{
 				switch (cfg2[i].type)
 				{
-				case CFG_NONE: if (cfg2[i].name) fprintf(fp, "\r\n%s\r\n", cfg2[i].name); break;
-				case CFG_STR:  fprintf(fp, "%s = \"%s\"\r\n", cfg2[i].name, cfg2[i].value); break;
+				case CFG_NONE: if (cfg2[i].name) fd_printf(fd, "\r\n%s\r\n", cfg2[i].name); break;
+				case CFG_STR:  fd_printf(fd, "%s = \"%s\"\r\n", cfg2[i].name, cfg2[i].value); break;
 				}
 			}
 		}
 
-		fclose(fp);
+		close(fd);
 
 		return 1;
 	}

@@ -99,7 +99,7 @@ static void save_thumbnail(void)
 	Load Thumbnail from File to Work Area
 ------------------------------------------------------*/
 
-static void load_thumbnail(FILE *fp)
+static void load_thumbnail(int fd)
 {
 	int x, y, w, h;
 	uint16_t *dst = (uint16_t *)UI_TEXTURE;
@@ -121,11 +121,7 @@ static void load_thumbnail(FILE *fp)
 	{
 		for (x = 0; x < w; x++)
 		{
-#if (EMU_SYSTEM == NCDZ) || defined(ADHOC)
-			fread(&dst[x], 1, 2, fp);
-#else
-			state_load_word(&dst[x], 1);
-#endif
+			read(fd, &dst[x], 2);
 		}
 		dst += BUF_WIDTH;
 	}
@@ -379,11 +375,7 @@ error:
 
 int state_load(int slot)
 {
-#if defined(ADHOC) || (EMU_SYSTEM == NCDZ)
 	int32_t fd;
-#else
-	FILE *fp;
-#endif
 	char path[PATH_MAX];
 	char error_mes[128];
 	char buf[128];
@@ -537,7 +529,7 @@ int state_load(int slot)
 		}
 #endif
 #else
-	if ((fp = fopen(path, "rb")) != NULL)
+	if ((fd = open(path, O_RDONLY)) >= 0)
 	{
 		state_load_skip((8+16));
 		update_progress();
@@ -545,40 +537,40 @@ int state_load(int slot)
 		state_load_skip((152*112*2));
 		update_progress();
 
-		state_load_memory(fp);
-		state_load_m68000(fp);
-		state_load_z80(fp);
-		state_load_input(fp);
-		state_load_timer(fp);
-		state_load_driver(fp);
-		state_load_video(fp);
+		state_load_memory(fd);
+		state_load_m68000(fd);
+		state_load_z80(fd);
+		state_load_input(fd);
+		state_load_timer(fd);
+		state_load_driver(fd);
+		state_load_video(fd);
 #if (EMU_SYSTEM == CPS1)
 
-		state_load_coin(fp);
+		state_load_coin(fd);
 		switch (machine_driver_type)
 		{
 		case MACHINE_qsound:
-			state_load_qsound(fp);
-			state_load_eeprom(fp);
+			state_load_qsound(fd);
+			state_load_eeprom(fd);
 			break;
 
 		case MACHINE_pang3:
-			state_load_eeprom(fp);
+			state_load_eeprom(fd);
 
 		default:
-			state_load_ym2151(fp);
+			state_load_ym2151(fd);
 			break;
 		}
-		fclose(fp);
+		close(fd);
 #elif (EMU_SYSTEM == CPS2)
-		state_load_coin(fp);
-		state_load_qsound(fp);
-		state_load_eeprom(fp);
-		fclose(fp);
+		state_load_coin(fd);
+		state_load_qsound(fd);
+		state_load_eeprom(fd);
+		close(fd);
 #elif (EMU_SYSTEM == MVS)
-		state_load_ym2610(fp);
-		state_load_pd4990a(fp);
-		fclose(fp);
+		state_load_ym2610(fd);
+		state_load_pd4990a(fd);
+		close(fd);
 
 		if (state_reload_bios)
 		{
@@ -652,23 +644,24 @@ void state_make_thumbnail(void)
 
 int state_load_thumbnail(int slot)
 {
-	FILE *fp;
+	int fd;
 	char path[PATH_MAX];
 
 	clear_thumbnail();
 
 	sprintf(path, "%sstate/%s.sv%d", launchDir, game_name, slot);
 
-	if ((fp = fopen(path, "rb")) != NULL)
+	fd = open(path, O_RDONLY);
+	if (fd >= 0)
 	{
 		stateTime t;
 
 		memset(stver_str, 0, 16);
 
-		fread(stver_str, 1, 8, fp);
-		fread(&t, 1, 16, fp);
-		load_thumbnail(fp);
-		fclose(fp);
+		read(fd, stver_str, 8);
+		read(fd, &t, 16);
+		load_thumbnail(fd);
+		close(fd);
 
 		current_state_version = current_version_str[7] - '0';
 		state_version = stver_str[7] - '0';

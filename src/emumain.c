@@ -422,15 +422,15 @@ void save_snapshot(void)
 
 	if (snap_no == -1)
 	{
-		FILE *fp;
-
 		snap_no = 1;
 
 		while (1)
 		{
+			int fd;
 			sprintf(path, "%s/%s_%02d.png", screenshotDir, game_name, snap_no);
-			if ((fp = fopen(path, "rb")) == NULL) break;
-			fclose(fp);
+			fd = open(path, O_RDONLY);
+			if (fd < 0) break;
+			close(fd);
 			snap_no++;
 		}
 	}

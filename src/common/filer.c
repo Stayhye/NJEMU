@@ -357,7 +357,7 @@ static void show_title(int sx, int sy)
 
 static void check_neocd_bios(void)
 {
-	FILE *fp;
+	int fd;
 	char path[PATH_MAX];
 	uint8_t *temp_mem;
 
@@ -371,10 +371,11 @@ static void check_neocd_bios(void)
 
 	sprintf(path, "%s%s", launchDir, "neocd.bin");
 
-	if ((fp = fopen(path, "rb")) != NULL)
+	fd = open(path, O_RDONLY);
+	if (fd >= 0)
 	{
-		fread(temp_mem, 1, 0x80000, fp);
-		fclose(fp);
+		read(fd, temp_mem, 0x80000);
+		close(fd);
 
 		if (crc32(0, temp_mem, 0x80000) != 0xdf9de490)
 			bios_error = 2;
@@ -405,47 +406,35 @@ static void check_neocd_bios(void)
 
 static int load_zipname(void)
 {
-	FILE *fp;
+	int fd;
 	char path[PATH_MAX], buf[256];
 	int found = 0;
 
 	if (ui_text_driver->getLanguage(ui_text_data) == LANG_JAPANESE)
 	{
 		sprintf(path, "%szipnamej." EXT, launchDir);
-		if ((fp = fopen(path, "rb")) != NULL)
-		{
-			fclose(fp);
-			found = 1;
-		}
+		fd = open(path, O_RDONLY);
+		if (fd >= 0) { close(fd); found = 1; }
 	}
 	if (ui_text_driver->getLanguage(ui_text_data) == LANG_CHINESE_SIMPLIFIED)
 	{
 		sprintf(path, "%szipnamech1." EXT, launchDir);
-		if ((fp = fopen(path, "rb")) != NULL)
-		{
-			fclose(fp);
-			found = 1;
-		}
+		fd = open(path, O_RDONLY);
+		if (fd >= 0) { close(fd); found = 1; }
 	}
 	if (ui_text_driver->getLanguage(ui_text_data) == LANG_CHINESE_TRADITIONAL)
 	{
 		sprintf(path, "%szipnamech2." EXT, launchDir);
-		if ((fp = fopen(path, "rb")) != NULL)
-		{
-			fclose(fp);
-			found = 1;
-		}
+		fd = open(path, O_RDONLY);
+		if (fd >= 0) { close(fd); found = 1; }
 	}
 	if (!found)
 	{
 		sprintf(path, "%szipname." EXT, launchDir);
 	}
-	if ((fp = fopen(path, "rb")) == NULL)
+	fd = open(path, O_RDONLY);
+	if (fd < 0)
 		return 0;
-
-	fseek(fp, 0, SEEK_END);
-	ftell(fp);
-	fseek(fp, 0, SEEK_SET);
 
 	zipname_num = 0;
 	while (zipname_num < MAX_GAMES)
@@ -454,18 +443,30 @@ static int load_zipname(void)
 		char *name;
 		char *title;
 		char *flag;
+		char c;
+		int n = 0;
 
 		memset(buf, 0, 256);
 
-		if (!fgets(buf, 255, fp)) break;
+		/* read one line */
+		while (n < 255) {
+			if (read(fd, &c, 1) <= 0) break;
+			buf[n++] = c;
+			if (c == '\n') break;
+		}
+		if (n == 0) break;
+		buf[n] = '\0';
 
 		linebuf = strtok(buf, "\r\n");
+		if (linebuf == NULL) continue;
 
 		zipname[zipname_num].flag = 0;
 
 		name  = strtok(linebuf, ",\r\n");
 		title = strtok(NULL, ",\r\n");
 		flag  = strtok(NULL, ",\r\n");
+
+		if (name == NULL || title == NULL) continue;
 
 		strcpy(zipname[zipname_num].zipname, name);
 		strcpy(zipname[zipname_num].title, title);
@@ -481,7 +482,7 @@ static int load_zipname(void)
 		zipname_num++;
 	}
 
-	fclose(fp);
+	close(fd);
 
 	return 1;
 }
